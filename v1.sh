@@ -11,11 +11,10 @@ CSV_FILE="/root/vpn_users.csv"
 USER_FILE="/etc/ocserv/ocpasswd"
 CERT_DIR="/etc/ocserv/certs"
 SOCKET_FILE="/run/ocserv.socket"
-LOG_FILE="/var/log/ocserv.log"
 
 echo "[*] Installing dependencies..."
 apt update
-apt install -y python3 python3-pip python3-venv ocserv curl openssl pwgen iproute2 iptables-persistent socat
+apt install -y python3 python3-pip python3-venv ocserv curl openssl pwgen iproute2 iptables-persistent
 
 echo "[*] Configuring ocserv VPN on port $VPN_PORT..."
 mkdir -p $CERT_DIR
@@ -39,15 +38,7 @@ default-domain = vpn
 ipv4-network = 192.168.150.0/24
 dns = 8.8.8.8
 dns = 1.1.1.1
-log-file = $LOG_FILE
 EOF
-
-echo "[*] Fixing socket permissions for Flask access..."
-# Wait for ocserv to create socket (start ocserv first)
-systemctl enable --now ocserv
-sleep 2
-chgrp www-data $SOCKET_FILE || true
-chmod 660 $SOCKET_FILE || true
 
 echo "[*] Opening firewall for VPN port $VPN_PORT..."
 if command -v ufw &>/dev/null; then
@@ -100,16 +91,9 @@ USER_FILE = '/etc/ocserv/ocpasswd'
 MAX_USERS = 6000
 PANEL_PORT = 8080
 VPN_PORT = 4443
-SOCKET_FILE = '/run/ocserv.socket'
-LOG_FILE = '/var/log/ocserv.log'
 
 app = Flask(__name__)
 app.secret_key = 'this-is-super-secret-change-me'
-
-# Suppress Flask default logging to avoid polluting syslog
-import logging
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
 
 def get_ip():
     try:
@@ -122,11 +106,9 @@ def get_ip():
 def load_admin():
     with open(ADMIN_INFO) as f:
         return json.load(f)
-
 def save_admin(admin):
     with open(ADMIN_INFO, 'w') as f:
         json.dump(admin, f)
-
 def get_users():
     users = []
     if os.path.exists(CSV_FILE):
@@ -139,33 +121,6 @@ def get_users():
                     users.append({'username': row[0], 'password': row[1]})
     return users
 
-def get_active_sessions():
-    try:
-        cmd = ['socat', 'unix-connect:' + SOCKET_FILE, '-']
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        out, err = proc.communicate(input='show-sessions\nquit\n', timeout=3)
-        sessions = []
-        for line in out.splitlines():
-            if line.startswith("session:"):
-                parts = line.split()[1:]  # skip "session:"
-                session_info = {}
-                for p in parts:
-                    if '=' in p:
-                        k,v = p.split('=',1)
-                        session_info[k] = v
-                sessions.append(session_info)
-        return sessions
-    except Exception as e:
-        # For debugging, you can log e somewhere
-        return []
-
-def get_vpn_logs(lines=50):
-    try:
-        with open(LOG_FILE, 'r') as f:
-            return f.readlines()[-lines:]
-    except:
-        return []
-
 @app.route('/', methods=['GET', 'POST'])
 def login():
     if session.get('admin'):
@@ -177,32 +132,41 @@ def login():
             return redirect(url_for('dashboard'))
         flash('Login failed.', 'error')
     return render_template_string('''
-    <html>
+    <!DOCTYPE html>
+    <html lang="en">
     <head>
+      <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>OpenConnect Admin Login</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap" rel="stylesheet">
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <style>
-        body {background: linear-gradient(120deg, #232e47 0%, #447cfb 100%); min-height:100vh; font-family: 'Inter',sans-serif; margin:0;}
-        .login-card {max-width:380px; margin:80px auto; background:#fff; border-radius:20px; box-shadow:0 8px 32px #0002; padding:36px 28px;}
-        h2 {margin:0 0 20px 0; color:#2354be; font-size:2em; font-weight:900;}
-        input {width:100%; padding:15px; border-radius:9px; border:1px solid #bcd; margin-bottom:16px; font-size:1.1em;}
-        button {width:100%; background:linear-gradient(90deg,#3579f8,#43e3c1); color:#fff; border:0; border-radius:9px; font-size:1.12em; font-weight:700; padding:14px; transition:.15s;}
-        button:hover {filter:brightness(.97);}
-        .toast {color:#e9435b; font-weight:700; margin-top:12px;}
-        @media(max-width:600px) {.login-card{padding:18px 8px;}}
+        body {background: linear-gradient(135deg, #232e47 0%, #447cfb 100%); min-height:100vh; font-family: 'Inter',sans-serif;}
+        .card {max-width:400px; margin:90px auto; border-radius:18px; box-shadow:0 8px 32px #0002;}
+        .brand {font-size:2.2em; color:#2354be; font-weight:900;}
+        @media(max-width:600px) {.card{padding:12px;}}
       </style>
     </head>
     <body>
-      <form class="login-card" method=post>
-        <h2>OpenConnect<br>Admin</h2>
-        <input name=username placeholder="admin" required>
-        <input name=password type=password placeholder="password" required>
-        <button>Login</button>
-        <div class="toast">{% with messages = get_flashed_messages(with_categories=true) %}
-            {% for cat,msg in messages %}{% if cat=='error' %}{{msg}}{% endif %}{% endfor %}{% endwith %}</div>
-      </form>
+      <div class="container py-5">
+        <div class="card p-5">
+          <div class="text-center brand mb-4"><span class="material-icons" style="font-size:2em;vertical-align:bottom;">vpn_key</span> OpenConnect</div>
+          <form method="post">
+            <div class="mb-3">
+              <input class="form-control" name="username" placeholder="Username" required autofocus>
+            </div>
+            <div class="mb-3">
+              <input class="form-control" name="password" type="password" placeholder="Password" required>
+            </div>
+            <button class="btn btn-primary w-100">Login</button>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for cat,msg in messages %}{% if cat=='error' %}
+            <div class="alert alert-danger mt-3" role="alert">{{msg}}</div>
+            {% endif %}{% endfor %}{% endwith %}
+          </form>
+        </div>
+      </div>
     </body>
     </html>
     ''')
@@ -214,230 +178,158 @@ def dashboard():
     users = get_users()
     admin = load_admin()
     server_ip = get_ip()
-    edit = request.args.get('edit') == '1'
     return render_template_string('''
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>OpenConnect Admin</title>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap" rel="stylesheet">
-      <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-      <style>
-        body {background: linear-gradient(120deg,#232e47 0%,#447cfb 100%); min-height:100vh; margin:0;}
-        .main-wrap {max-width:420px; margin:0 auto 0 auto; padding:24px 0;}
-        .header {font-size:2.1em; color:#fff; font-weight:900; letter-spacing:-1px; margin-bottom:24px; text-align:center;}
-        .card {background:#fff; border-radius:18px; box-shadow:0 6px 32px #0002; margin-bottom:21px; padding:22px 18px; display:flex; flex-direction:column;}
-        .row {display:flex;align-items:center;gap:14px;margin-bottom:10px;}
-        .icon-btn {background:#edf3fd;border-radius:9px;border:0;padding:8px 11px;cursor:pointer;font-size:1.35em;vertical-align:middle;display:inline-flex;align-items:center;position:relative;}
-        .icon-btn:active{background:#cbe0fc;}
-        .ip-port {font-size:1.13em; color:#2263db; font-weight:800;}
-        .adduser-input {flex:1;}
-        .user-table {width:100%; margin-top:10px; border-collapse:collapse;}
-        .user-table th, .user-table td {padding:10px 6px;text-align:left;}
-        .user-table th {background:#f2f7ff;}
-        .user-table tr:nth-child(even) {background:#f7fafd;}
-        .user-delete-btn {background:#ffebee; color:#e9435b; border-radius:9px; border:0; font-size:1.1em; cursor:pointer; padding:5px 10px;}
-        .user-delete-btn:active {background:#f9bbbe;}
-        .admin-row {display:flex;align-items:center;justify-content:space-between;}
-        .admin-label {color:#888;font-size:.97em;}
-        .admin-value {font-size:1.04em;}
-        .edit-btn {background:none; border:0; color:#3579f8; font-size:1.24em; cursor:pointer; margin-left:8px;}
-        .edit-btn:active {color:#1e2c7d;}
-        .panel-info {color:#115; font-size:1.01em;}
-        .copy-cmd-box {display:flex;align-items:center;gap:10px;margin-top:6px;}
-        .copy-cmd-inp {flex:1; font-size:1em; padding:8px 9px; border-radius:8px; border:1px solid #cce;}
-        .copy-cmd-icon {background:#edf3fd;border-radius:8px;border:0;padding:8px 11px;cursor:pointer;font-size:1.35em;vertical-align:middle;display:inline-flex;align-items:center;position:relative;}
-        .copy-cmd-icon:active{background:#cbe0fc;}
-        .save-btn {margin-top:12px;width:100%;background:linear-gradient(90deg,#3579f8,#43e3c1); color:#fff; border:0; border-radius:9px; font-size:1.09em; font-weight:700; padding:13px;}
-        .save-btn:active {filter:brightness(.97);}
-        a {color:#3579f8; text-decoration:none; font-weight:700; margin-top:12px;}
-        a:hover {text-decoration:underline;}
-        @media(max-width:480px) {
-            .main-wrap {padding:8px 2vw;}
-            .card {padding:14px 4vw;}
-        }
-      </style>
-    </head>
-    <body>
-    <div class="main-wrap">
-      <div class="header">OpenConnect Admin</div>
-      <!-- Card 1: Server Info -->
-      <div class="card">
-        <div class="row">
-          <span class="ip-port">Server IP:</span>
-          <span class="copy-value" id="serverip">{{server_ip}}</span>
-          <button class="icon-btn" onclick="copyVal('serverip',this)" title="Copy IP"><span class="material-icons">content_copy</span></button>
-        </div>
-        <div class="row">
-          <span class="ip-port">VPN Port:</span>
-          <span class="copy-value" id="vpnport">{{vpn_port}}</span>
-          <button class="icon-btn" onclick="copyVal('vpnport',this)" title="Copy Port"><span class="material-icons">content_copy</span></button>
-        </div>
-
-      <a href="{{ url_for('sessions') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View Active Sessions</a>
-      <a href="{{ url_for('logs') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View VPN Logs</a>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenConnect Admin Dashboard</title>
+    <!-- Bootstrap and fonts -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+      body {font-family:'Inter',sans-serif;}
+      .sidebar {
+        min-height: 100vh;
+        background: linear-gradient(135deg,#232e47,#447cfb);
+        color: #fff;
+      }
+      .sidebar .nav-link.active, .sidebar .nav-link:hover {
+        background: #fff2;
+        color: #fff !important;
+      }
+      .avatar {width: 38px; height: 38px; border-radius: 50%; background:#fff4; display:inline-block;}
+      .bg-card {background:#fff; border-radius:18px; box-shadow:0 2px 16px #0001;}
+      .table th, .table td {vertical-align:middle;}
+      @media (max-width: 768px) {
+        .sidebar {min-height:auto; padding:8px;}
+        .bg-card {margin-top: 10px;}
+      }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+  <div class="row flex-nowrap">
+    <div class="col-auto col-md-3 col-xl-2 px-3 sidebar d-flex flex-column justify-content-between">
+      <div>
+        <h2 class="mt-4 mb-4 text-center"><span class="material-icons align-middle">admin_panel_settings</span> Admin</h2>
+        <ul class="nav nav-pills flex-column mb-auto">
+          <li class="nav-item">
+            <a href="#" class="nav-link text-white active" aria-current="page">
+              <span class="material-icons align-middle">dashboard</span> Dashboard
+            </a>
+          </li>
+        </ul>
       </div>
-      <!-- Card 2: Add User -->
-      <div class="card">
-        <div style="font-weight:700; font-size:1.13em; margin-bottom:16px;">Add New User</div>
-        <form method="post" action="{{ url_for('add_user') }}" style="display:flex; flex-direction:column; gap:12px;">
-          <input class="adduser-input" name="username" placeholder="Username" required minlength=2 style="width:100%;"/>
-          <input class="adduser-input" name="password" placeholder="Password" required minlength=3 style="width:100%;"/>
-          <button type="submit" style="width:100%;background:linear-gradient(90deg,#3579f8,#43e3c1);color:#fff;border:0;border-radius:9px;font-size:1.12em;font-weight:700;padding:14px;margin-top:8px;transition:.15s;">
-            Add User
-          </button>
+      <div class="mb-3 text-center">
+        <span class="avatar"><span class="material-icons" style="line-height:38px;">account_circle</span></span>
+        <div class="mt-2 small">{{ admin.username }}</div>
+      </div>
+    </div>
+    <div class="col py-3 px-4">
+      <div class="d-flex justify-content-between align-items-center">
+        <h3 class="fw-bold">Dashboard</h3>
+        <form method="post" action="{{ url_for('logout') }}">
+          <button class="btn btn-outline-secondary">Logout</button>
         </form>
       </div>
-      <!-- Card 3: Users List -->
-      <div class="card">
-        <div style="font-weight:700;margin-bottom:10px;">All VPN Users</div>
-        <table class="user-table">
-          <tr><th>Username</th><th>Password</th><th>Delete</th></tr>
-          {% for user in users %}
-          <tr>
-            <td>{{user.username}}</td>
-            <td>{{user.password}}</td>
-            <td>
-              <form method="post" action="{{ url_for('del_user') }}" style="display:inline;">
-                <input type="hidden" name="username" value="{{user.username}}">
-                <button class="user-delete-btn" title="Delete"><span class="material-icons" style="font-size:1.09em;">delete</span></button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </table>
-      </div>
-      <!-- Card 4: Admin Info -->
-      <div class="card">
-        {% if not edit %}
-        <div class="admin-row">
-          <div>
-            <div class="admin-label">Admin Username:</div>
-            <div class="admin-value">{{admin.username}}</div>
-            <div class="admin-label" style="margin-top:7px;">Admin Password:</div>
-            <div class="admin-value">{{admin.password}}</div>
-          </div>
-          <form method="get" action="{{ url_for('dashboard') }}">
-            <input type="hidden" name="edit" value="1">
-            <button class="edit-btn" title="Edit"><span class="material-icons">edit</span></button>
-          </form>
-        </div>
-        {% else %}
-        <form method="post" action="{{ url_for('edit_admin') }}">
-          <input name="username" placeholder="New Username" required minlength=2 value="{{admin.username}}" style="margin-bottom:9px;">
-          <input name="password" placeholder="New Password" required minlength=3 value="{{admin.password}}">
-          <button class="save-btn">Save</button>
-        </form>
-        {% endif %}
-      </div>
-      <!-- Card 5: Panel Details -->
-      <div class="card">
-        <div class="panel-info">
-          <b>Max Users:</b> {{MAX_USERS}}<br>
-          <b>Recover admin:</b>
-          <div class="copy-cmd-box">
-            <input class="copy-cmd-inp" id="cmdinp" value="sudo get_admin_info" readonly>
-            <button class="copy-cmd-icon" onclick="copyVal('cmdinp',this)" title="Copy Command"><span class="material-icons">content_copy</span></button>
-          </div>
-        </div>
-      </div>
+
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat,msg in messages %}
-          <div class="card" style="background:#e0f8ee; color:#06765e; font-weight:700; text-align:center;">{{msg}}</div>
+        <div class="alert alert-{{'danger' if cat=='error' else 'success'}} alert-dismissible fade show mt-3" role="alert">
+          {{msg}}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
         {% endfor %}
       {% endwith %}
-      <form method="post" action="{{ url_for('logout') }}">
-        <button class="save-btn" style="margin:26px auto 0 auto;width:100%;">Logout</button>
-      </form>
+
+      <!-- Server Info -->
+      <div class="row g-3 mt-2">
+        <div class="col-md-4">
+          <div class="bg-card p-4">
+            <h5><span class="material-icons">computer</span> Server</h5>
+            <div><b>IP:</b> <code>{{server_ip}}</code></div>
+            <div><b>VPN Port:</b> <code>{{vpn_port}}</code></div>
+            <div class="mt-2 small"><b>Max users:</b> {{MAX_USERS}}</div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <!-- Add User -->
+          <div class="bg-card p-4 mb-3">
+            <h6 class="mb-3"><span class="material-icons align-middle">person_add</span> Add User</h6>
+            <form class="row g-2" method="post" action="{{ url_for('add_user') }}">
+              <div class="col-auto flex-grow-1">
+                <input class="form-control" name="username" placeholder="Username" required minlength=2 />
+              </div>
+              <div class="col-auto flex-grow-1">
+                <input class="form-control" name="password" placeholder="Password" required minlength=3 />
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-primary px-4">Add</button>
+              </div>
+            </form>
+          </div>
+          <!-- User Table -->
+          <div class="bg-card p-4">
+            <h6><span class="material-icons align-middle">group</span> Users</h6>
+            <div class="table-responsive">
+              <table class="table table-striped align-middle mt-2">
+                <thead><tr><th>Username</th><th>Password</th><th>Action</th></tr></thead>
+                <tbody>
+                  {% for user in users %}
+                  <tr>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.password }}</td>
+                    <td>
+                      <form method="post" action="{{ url_for('del_user') }}">
+                        <input type="hidden" name="username" value="{{user.username}}">
+                        <button class="btn btn-danger btn-sm"><span class="material-icons" style="font-size:1em;">delete</span></button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Info Card -->
+      <div class="row g-3 mt-3">
+        <div class="col-md-6">
+          <div class="bg-card p-4">
+            <h6><span class="material-icons align-middle">manage_accounts</span> Admin Info</h6>
+            <form method="post" action="{{ url_for('edit_admin') }}">
+              <div class="mb-2"><label class="form-label">Username</label>
+                <input class="form-control" name="username" required minlength=2 value="{{admin.username}}">
+              </div>
+              <div class="mb-2"><label class="form-label">Password</label>
+                <input class="form-control" name="password" required minlength=3 value="{{admin.password}}">
+              </div>
+              <button class="btn btn-outline-primary">Update Admin</button>
+            </form>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="bg-card p-4">
+            <h6><span class="material-icons align-middle">settings</span> Panel Info</h6>
+            <div><b>Recover admin:</b> <code>sudo get_admin_info</code></div>
+            <div class="mt-2"><b>Docs:</b> <a href="#" class="link-primary">Readme</a></div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="mt-5 text-muted small text-center">OpenConnect Admin Panel &copy; 2025</footer>
     </div>
-    <script>
-      function copyVal(elemId, btn) {
-        let val = document.getElementById(elemId).innerText || document.getElementById(elemId).value;
-        navigator.clipboard.writeText(val);
-        let tip = document.createElement('span');
-        tip.textContent = 'Copied!';
-        tip.style.position = 'absolute';
-        tip.style.background = '#22c55e';
-        tip.style.color = '#fff';
-        tip.style.padding = '3px 12px';
-        tip.style.borderRadius = '8px';
-        tip.style.fontWeight = '700';
-        tip.style.fontSize = '0.97em';
-        tip.style.left = '50%';
-        tip.style.top = '-28px';
-        tip.style.transform = 'translateX(-50%)';
-        tip.style.boxShadow = '0 1px 7px #0003';
-        tip.style.zIndex = '1000';
-        btn.style.position = 'relative';
-        btn.appendChild(tip);
-        setTimeout(() => { btn.removeChild(tip); }, 1000);
-      }
-    </script>
-    </body>
-    </html>
-    ''', users=users, admin=admin, server_ip=server_ip, vpn_port=VPN_PORT, MAX_USERS=MAX_USERS, edit=edit)
-
-@app.route('/sessions')
-def sessions():
-    if not session.get('admin'):
-        return redirect(url_for('login'))
-    sessions = get_active_sessions()
-    return render_template_string('''
-    <html><head>
-      <title>Active VPN Sessions</title>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap" rel="stylesheet">
-      <style>
-        body {background:#f5f9ff; font-family: 'Inter', sans-serif; margin:20px;}
-        table {width:100%; border-collapse: collapse; margin-bottom: 20px;}
-        th, td {border: 1px solid #ccc; padding: 8px; text-align: left;}
-        th {background:#e0eaff;}
-        a {text-decoration:none; color:#3579f8; font-weight:700;}
-        a:hover {text-decoration:underline;}
-      </style>
-    </head><body>
-    <h2>Active VPN Sessions</h2>
-    {% if sessions %}
-    <table>
-      <tr><th>Username</th><th>IP</th><th>Bytes In</th><th>Bytes Out</th><th>Start Time</th></tr>
-      {% for s in sessions %}
-      <tr>
-        <td>{{ s.get('username', '') }}</td>
-        <td>{{ s.get('ip', '') }}</td>
-        <td>{{ s.get('bytes-in', '') }}</td>
-        <td>{{ s.get('bytes-out', '') }}</td>
-        <td>{{ s.get('start-time', '') }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% else %}
-    <p>No active sessions found.</p>
-    {% endif %}
-    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-    </body></html>
-    ''', sessions=sessions)
-
-@app.route('/logs')
-def logs():
-    if not session.get('admin'):
-        return redirect(url_for('login'))
-    logs = get_vpn_logs()
-    return render_template_string('''
-    <html><head>
-      <title>VPN Logs</title>
-      <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
-      <style>
-        body {background:#111; color:#eee; font-family: monospace; white-space: pre-wrap; margin:20px;}
-        a {color:#3579f8; font-weight:700; text-decoration:none;}
-        a:hover {text-decoration:underline;}
-        .log-container {background:#222; padding:15px; border-radius:10px; max-height:70vh; overflow-y:auto; font-size:0.85em;}
-      </style>
-    </head><body>
-      <h2>VPN Log (last 50 lines)</h2>
-      <div class="log-container">{{ logs | join('') }}</div>
-      <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-    </body></html>
-    ''', logs=logs)
+  </div>
+</div>
+</body>
+</html>
+''', users=users, admin=admin, server_ip=server_ip, vpn_port=VPN_PORT, MAX_USERS=MAX_USERS)
 
 @app.route('/add_user', methods=['POST'])
 def add_user():
@@ -525,8 +417,7 @@ Description=OpenConnect Admin Panel
 After=network.target
 
 [Service]
-User=www-data
-Group=www-data
+User=root
 WorkingDirectory=$PANEL_DIR
 ExecStart=$PANEL_DIR/venv/bin/python3 app.py
 Restart=always
@@ -535,7 +426,6 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-echo "[*] Reloading systemd and starting services..."
 systemctl daemon-reload
 systemctl enable --now ocserv
 systemctl restart ocserv

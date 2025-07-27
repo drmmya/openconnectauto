@@ -207,12 +207,12 @@ def dashboard():
 </head>
 <body>
 <!-- Sidebar: fixed on desktop, offcanvas on mobile -->
-<div class="offcanvas-lg offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
+<div class="offcanvas-lg offcanvas-start sidebar-gradient d-flex flex-column" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
   <div class="offcanvas-header d-lg-none">
     <h5 class="offcanvas-title" id="sidebarMenuLabel">OpenConnect Admin</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu"></button>
   </div>
-  <div class="offcanvas-body px-3 d-flex flex-column justify-content-between">
+  <div class="offcanvas-body px-3 d-flex flex-column flex-grow-1">
     <div>
       <h2 class="mt-4 mb-4 text-center d-none d-lg-block"><span class="material-icons align-middle">admin_panel_settings</span> Admin</h2>
       <ul class="nav nav-pills flex-column mb-auto">
@@ -223,7 +223,8 @@ def dashboard():
         </li>
       </ul>
     </div>
-    <div class="mb-3 text-center">
+    <!-- Avatar always at bottom -->
+    <div class="mb-3 text-center mt-auto">
       <span class="avatar"><span class="material-icons" style="line-height:38px;">account_circle</span></span>
       <div class="mt-2 small">{{ admin.username }}</div>
     </div>

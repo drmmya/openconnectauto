@@ -208,7 +208,7 @@ def dashboard():
 </head>
 <body>
 <!-- Sidebar Offcanvas -->
-<div class="offcanvas-lg offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
+<div class="offcanvas offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
   <div class="offcanvas-header d-lg-none">
     <h5 class="offcanvas-title" id="sidebarMenuLabel">OpenConnect Admin</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu"></button>

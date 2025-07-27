@@ -182,33 +182,32 @@ def dashboard():
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenConnect Admin Dashboard</title>
-    <!-- Bootstrap and fonts -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <style>
-      body {font-family:'Inter',sans-serif;}
-      .avatar {width: 38px; height: 38px; border-radius: 50%; background:#fff4; display:inline-block;}
-      .bg-card {background:#fff; border-radius:18px; box-shadow:0 2px 16px #0001;}
-      .table th, .table td {vertical-align:middle;}
-      .sidebar-gradient {background: linear-gradient(135deg,#232e47,#447cfb); color:#fff;}
-      @media (min-width: 992px) {
-        #sidebarMenu {position:fixed; top:0; left:0; height:100vh; width:230px; z-index:1045;}
-        .main-content {margin-left:230px;}
-      }
-      @media (max-width: 991.98px) {
-        #sidebarMenu {width: 70vw; min-width: 180px;}
-        .main-content {margin-left:0;}
-      }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenConnect Admin Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <style>
+    body {font-family:'Inter',sans-serif;}
+    .avatar {width: 38px; height: 38px; border-radius: 50%; background:#fff4; display:inline-block;}
+    .bg-card {background:#fff; border-radius:18px; box-shadow:0 2px 16px #0001;}
+    .table th, .table td {vertical-align:middle;}
+    .sidebar-gradient {background: linear-gradient(135deg,#232e47,#447cfb); color:#fff;}
+    @media (min-width: 992px) {
+      #sidebarMenu {position:fixed; top:0; left:0; height:100vh; width:230px; z-index:1045;}
+      .main-content {margin-left:230px;}
+    }
+    @media (max-width: 991.98px) {
+      #sidebarMenu {width: 70vw; min-width: 180px;}
+      .main-content {margin-left:0;}
+    }
+  </style>
 </head>
 <body>
-<!-- Sidebar Offcanvas -->
-<div class="offcanvas offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
+<!-- Sidebar: fixed on desktop, offcanvas on mobile -->
+<div class="offcanvas-lg offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
   <div class="offcanvas-header d-lg-none">
     <h5 class="offcanvas-title" id="sidebarMenuLabel">OpenConnect Admin</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu"></button>
@@ -233,7 +232,7 @@ def dashboard():
 
 <!-- Main content with navbar -->
 <div class="main-content">
-  <!-- Navbar: hamburger for mobile, brand, logout -->
+  <!-- Navbar: hamburger only on mobile -->
   <nav class="navbar navbar-light bg-white px-3 border-bottom">
     <div class="d-flex align-items-center">
       <button class="btn d-lg-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu">
@@ -261,8 +260,8 @@ def dashboard():
       <div class="col-md-4">
         <div class="bg-card p-4">
           <h5><span class="material-icons">computer</span> Server</h5>
-          <div><b>IP:</b> <code>{{server_ip}}</code></div>
-          <div><b>VPN Port:</b> <code>{{vpn_port}}</code></div>
+          <div><b>IP:</b> <code style="color:#ec4899">{{server_ip}}</code></div>
+          <div><b>VPN Port:</b> <code style="color:#ec4899">{{vpn_port}}</code></div>
           <div class="mt-2 small"><b>Max users:</b> {{MAX_USERS}}</div>
         </div>
       </div>
@@ -327,7 +326,7 @@ def dashboard():
       <div class="col-md-6">
         <div class="bg-card p-4">
           <h6><span class="material-icons align-middle">settings</span> Panel Info</h6>
-          <div><b>Recover admin:</b> <code>sudo get_admin_info</code></div>
+          <div><b>Recover admin:</b> <code style="color:#ec4899">sudo get_admin_info</code></div>
           <div class="mt-2"><b>Docs:</b> <a href="#" class="link-primary">Readme</a></div>
         </div>
       </div>

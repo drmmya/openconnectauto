@@ -11,7 +11,7 @@ CSV_FILE="/root/vpn_users.csv"
 USER_FILE="/etc/ocserv/ocpasswd"
 CERT_DIR="/etc/ocserv/certs"
 SOCKET_FILE="/run/ocserv.socket"
-LOG_FILE="/var/log/syslog"  # change to /var/log/ocserv.log if needed
+LOG_FILE="/var/log/ocserv.log"
 
 echo "[*] Installing dependencies..."
 apt update
@@ -39,7 +39,15 @@ default-domain = vpn
 ipv4-network = 192.168.150.0/24
 dns = 8.8.8.8
 dns = 1.1.1.1
+log-file = $LOG_FILE
 EOF
+
+echo "[*] Fixing socket permissions for Flask access..."
+# Wait for ocserv to create socket (start ocserv first)
+systemctl enable --now ocserv
+sleep 2
+chgrp www-data $SOCKET_FILE || true
+chmod 660 $SOCKET_FILE || true
 
 echo "[*] Opening firewall for VPN port $VPN_PORT..."
 if command -v ufw &>/dev/null; then
@@ -93,10 +101,15 @@ MAX_USERS = 6000
 PANEL_PORT = 8080
 VPN_PORT = 4443
 SOCKET_FILE = '/run/ocserv.socket'
-LOG_FILE = '/var/log/syslog'  # Change if you have custom ocserv log
+LOG_FILE = '/var/log/ocserv.log'
 
 app = Flask(__name__)
 app.secret_key = 'this-is-super-secret-change-me'
+
+# Suppress Flask default logging to avoid polluting syslog
+import logging
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 def get_ip():
     try:
@@ -128,7 +141,6 @@ def get_users():
 
 def get_active_sessions():
     try:
-        # Use socat to send commands to ocserv socket
         cmd = ['socat', 'unix-connect:' + SOCKET_FILE, '-']
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         out, err = proc.communicate(input='show-sessions\nquit\n', timeout=3)
@@ -144,6 +156,7 @@ def get_active_sessions():
                 sessions.append(session_info)
         return sessions
     except Exception as e:
+        # For debugging, you can log e somewhere
         return []
 
 def get_vpn_logs(lines=50):
@@ -260,11 +273,11 @@ def dashboard():
           <span class="copy-value" id="vpnport">{{vpn_port}}</span>
           <button class="icon-btn" onclick="copyVal('vpnport',this)" title="Copy Port"><span class="material-icons">content_copy</span></button>
         </div>
-      </div>
 
       <a href="{{ url_for('sessions') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View Active Sessions</a>
       <a href="{{ url_for('logs') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View VPN Logs</a>
 
+      </div>
       <!-- Card 2: Add User -->
       <div class="card">
         <div style="font-weight:700; font-size:1.13em; margin-bottom:16px;">Add New User</div>
@@ -512,7 +525,8 @@ Description=OpenConnect Admin Panel
 After=network.target
 
 [Service]
-User=root
+User=www-data
+Group=www-data
 WorkingDirectory=$PANEL_DIR
 ExecStart=$PANEL_DIR/venv/bin/python3 app.py
 Restart=always
@@ -521,6 +535,7 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
+echo "[*] Reloading systemd and starting services..."
 systemctl daemon-reload
 systemctl enable --now ocserv
 systemctl restart ocserv

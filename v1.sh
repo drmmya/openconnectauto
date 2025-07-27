@@ -11,11 +11,11 @@ CSV_FILE="/root/vpn_users.csv"
 USER_FILE="/etc/ocserv/ocpasswd"
 CERT_DIR="/etc/ocserv/certs"
 SOCKET_FILE="/run/ocserv.socket"
-LOG_FILE="/var/log/ocserv.log"
+LOG_FILE="/var/log/syslog"  # change to /var/log/ocserv.log if needed
 
 echo "[*] Installing dependencies..."
 apt update
-apt install -y python3 python3-pip python3-venv ocserv curl openssl pwgen iproute2 iptables-persistent sudo
+apt install -y python3 python3-pip python3-venv ocserv curl openssl pwgen iproute2 iptables-persistent socat
 
 echo "[*] Configuring ocserv VPN on port $VPN_PORT..."
 mkdir -p $CERT_DIR
@@ -39,7 +39,6 @@ default-domain = vpn
 ipv4-network = 192.168.150.0/24
 dns = 8.8.8.8
 dns = 1.1.1.1
-log-file = $LOG_FILE
 EOF
 
 echo "[*] Opening firewall for VPN port $VPN_PORT..."
@@ -83,7 +82,6 @@ cat > $PANEL_DIR/requirements.txt <<EOF
 flask
 EOF
 
-# ========= Flask Admin Panel app.py =========
 cat > $PANEL_DIR/app.py <<"EOF"
 import os, json, subprocess, csv, socket
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash
@@ -91,10 +89,11 @@ from flask import Flask, render_template_string, request, redirect, url_for, ses
 ADMIN_INFO = '/opt/ocserv-admin/admin.json'
 CSV_FILE = '/root/vpn_users.csv'
 USER_FILE = '/etc/ocserv/ocpasswd'
-LOG_FILE = '/var/log/ocserv.log'
 MAX_USERS = 6000
 PANEL_PORT = 8080
 VPN_PORT = 4443
+SOCKET_FILE = '/run/ocserv.socket'
+LOG_FILE = '/var/log/syslog'  # Change if you have custom ocserv log
 
 app = Flask(__name__)
 app.secret_key = 'this-is-super-secret-change-me'
@@ -110,9 +109,11 @@ def get_ip():
 def load_admin():
     with open(ADMIN_INFO) as f:
         return json.load(f)
+
 def save_admin(admin):
     with open(ADMIN_INFO, 'w') as f:
         json.dump(admin, f)
+
 def get_users():
     users = []
     if os.path.exists(CSV_FILE):
@@ -124,6 +125,33 @@ def get_users():
                 if len(row) >= 2:
                     users.append({'username': row[0], 'password': row[1]})
     return users
+
+def get_active_sessions():
+    try:
+        # Use socat to send commands to ocserv socket
+        cmd = ['socat', 'unix-connect:' + SOCKET_FILE, '-']
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        out, err = proc.communicate(input='show-sessions\nquit\n', timeout=3)
+        sessions = []
+        for line in out.splitlines():
+            if line.startswith("session:"):
+                parts = line.split()[1:]  # skip "session:"
+                session_info = {}
+                for p in parts:
+                    if '=' in p:
+                        k,v = p.split('=',1)
+                        session_info[k] = v
+                sessions.append(session_info)
+        return sessions
+    except Exception as e:
+        return []
+
+def get_vpn_logs(lines=50):
+    try:
+        with open(LOG_FILE, 'r') as f:
+            return f.readlines()[-lines:]
+    except:
+        return []
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -182,7 +210,7 @@ def dashboard():
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap" rel="stylesheet">
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <style>
-        body {background: linear-gradient(120deg,#232e47 0%, #447cfb 100%); min-height:100vh; margin:0;}
+        body {background: linear-gradient(120deg,#232e47 0%,#447cfb 100%); min-height:100vh; margin:0;}
         .main-wrap {max-width:420px; margin:0 auto 0 auto; padding:24px 0;}
         .header {font-size:2.1em; color:#fff; font-weight:900; letter-spacing:-1px; margin-bottom:24px; text-align:center;}
         .card {background:#fff; border-radius:18px; box-shadow:0 6px 32px #0002; margin-bottom:21px; padding:22px 18px; display:flex; flex-direction:column;}
@@ -209,9 +237,8 @@ def dashboard():
         .copy-cmd-icon:active{background:#cbe0fc;}
         .save-btn {margin-top:12px;width:100%;background:linear-gradient(90deg,#3579f8,#43e3c1); color:#fff; border:0; border-radius:9px; font-size:1.09em; font-weight:700; padding:13px;}
         .save-btn:active {filter:brightness(.97);}
-        .dashboard-links {display:flex;gap:15px;margin-bottom:15px;}
-        .dashboard-links a {background:#232e47;color:#fff;border-radius:8px;padding:8px 18px;text-decoration:none;font-weight:700;font-size:1em;transition:.1s;}
-        .dashboard-links a:hover {background:#447cfb;}
+        a {color:#3579f8; text-decoration:none; font-weight:700; margin-top:12px;}
+        a:hover {text-decoration:underline;}
         @media(max-width:480px) {
             .main-wrap {padding:8px 2vw;}
             .card {padding:14px 4vw;}
@@ -221,58 +248,246 @@ def dashboard():
     <body>
     <div class="main-wrap">
       <div class="header">OpenConnect Admin</div>
-      <div class="dashboard-links">
-        <a href="{{ url_for('logs') }}">VPN Logs</a>
-        <a href="{{ url_for('sessions') }}">Connected Users</a>
+      <!-- Card 1: Server Info -->
+      <div class="card">
+        <div class="row">
+          <span class="ip-port">Server IP:</span>
+          <span class="copy-value" id="serverip">{{server_ip}}</span>
+          <button class="icon-btn" onclick="copyVal('serverip',this)" title="Copy IP"><span class="material-icons">content_copy</span></button>
+        </div>
+        <div class="row">
+          <span class="ip-port">VPN Port:</span>
+          <span class="copy-value" id="vpnport">{{vpn_port}}</span>
+          <button class="icon-btn" onclick="copyVal('vpnport',this)" title="Copy Port"><span class="material-icons">content_copy</span></button>
+        </div>
       </div>
-      <!-- rest of dashboard cards... -->
-      <!-- [KEEP THE REST OF YOUR DASHBOARD CARDS HERE, UNCHANGED] -->
-      <!-- ... -->
+
+      <a href="{{ url_for('sessions') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View Active Sessions</a>
+      <a href="{{ url_for('logs') }}" class="card" style="background:#e3f7ff; padding:16px; border-radius:16px; font-weight:700; text-align:center;">View VPN Logs</a>
+
+      <!-- Card 2: Add User -->
+      <div class="card">
+        <div style="font-weight:700; font-size:1.13em; margin-bottom:16px;">Add New User</div>
+        <form method="post" action="{{ url_for('add_user') }}" style="display:flex; flex-direction:column; gap:12px;">
+          <input class="adduser-input" name="username" placeholder="Username" required minlength=2 style="width:100%;"/>
+          <input class="adduser-input" name="password" placeholder="Password" required minlength=3 style="width:100%;"/>
+          <button type="submit" style="width:100%;background:linear-gradient(90deg,#3579f8,#43e3c1);color:#fff;border:0;border-radius:9px;font-size:1.12em;font-weight:700;padding:14px;margin-top:8px;transition:.15s;">
+            Add User
+          </button>
+        </form>
+      </div>
+      <!-- Card 3: Users List -->
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:10px;">All VPN Users</div>
+        <table class="user-table">
+          <tr><th>Username</th><th>Password</th><th>Delete</th></tr>
+          {% for user in users %}
+          <tr>
+            <td>{{user.username}}</td>
+            <td>{{user.password}}</td>
+            <td>
+              <form method="post" action="{{ url_for('del_user') }}" style="display:inline;">
+                <input type="hidden" name="username" value="{{user.username}}">
+                <button class="user-delete-btn" title="Delete"><span class="material-icons" style="font-size:1.09em;">delete</span></button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+      <!-- Card 4: Admin Info -->
+      <div class="card">
+        {% if not edit %}
+        <div class="admin-row">
+          <div>
+            <div class="admin-label">Admin Username:</div>
+            <div class="admin-value">{{admin.username}}</div>
+            <div class="admin-label" style="margin-top:7px;">Admin Password:</div>
+            <div class="admin-value">{{admin.password}}</div>
+          </div>
+          <form method="get" action="{{ url_for('dashboard') }}">
+            <input type="hidden" name="edit" value="1">
+            <button class="edit-btn" title="Edit"><span class="material-icons">edit</span></button>
+          </form>
+        </div>
+        {% else %}
+        <form method="post" action="{{ url_for('edit_admin') }}">
+          <input name="username" placeholder="New Username" required minlength=2 value="{{admin.username}}" style="margin-bottom:9px;">
+          <input name="password" placeholder="New Password" required minlength=3 value="{{admin.password}}">
+          <button class="save-btn">Save</button>
+        </form>
+        {% endif %}
+      </div>
+      <!-- Card 5: Panel Details -->
+      <div class="card">
+        <div class="panel-info">
+          <b>Max Users:</b> {{MAX_USERS}}<br>
+          <b>Recover admin:</b>
+          <div class="copy-cmd-box">
+            <input class="copy-cmd-inp" id="cmdinp" value="sudo get_admin_info" readonly>
+            <button class="copy-cmd-icon" onclick="copyVal('cmdinp',this)" title="Copy Command"><span class="material-icons">content_copy</span></button>
+          </div>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat,msg in messages %}
+          <div class="card" style="background:#e0f8ee; color:#06765e; font-weight:700; text-align:center;">{{msg}}</div>
+        {% endfor %}
+      {% endwith %}
       <form method="post" action="{{ url_for('logout') }}">
         <button class="save-btn" style="margin:26px auto 0 auto;width:100%;">Logout</button>
       </form>
     </div>
+    <script>
+      function copyVal(elemId, btn) {
+        let val = document.getElementById(elemId).innerText || document.getElementById(elemId).value;
+        navigator.clipboard.writeText(val);
+        let tip = document.createElement('span');
+        tip.textContent = 'Copied!';
+        tip.style.position = 'absolute';
+        tip.style.background = '#22c55e';
+        tip.style.color = '#fff';
+        tip.style.padding = '3px 12px';
+        tip.style.borderRadius = '8px';
+        tip.style.fontWeight = '700';
+        tip.style.fontSize = '0.97em';
+        tip.style.left = '50%';
+        tip.style.top = '-28px';
+        tip.style.transform = 'translateX(-50%)';
+        tip.style.boxShadow = '0 1px 7px #0003';
+        tip.style.zIndex = '1000';
+        btn.style.position = 'relative';
+        btn.appendChild(tip);
+        setTimeout(() => { btn.removeChild(tip); }, 1000);
+      }
+    </script>
     </body>
     </html>
     ''', users=users, admin=admin, server_ip=server_ip, vpn_port=VPN_PORT, MAX_USERS=MAX_USERS, edit=edit)
-
-@app.route('/logs')
-def logs():
-    if not session.get('admin'):
-        return redirect(url_for('login'))
-    logs = ''
-    try:
-        with open(LOG_FILE) as f:
-            logs = f.read()[-10000:]  # Last 10,000 chars
-    except Exception as e:
-        logs = f"Error reading log: {e}"
-    return render_template_string('''
-    <html><head><title>OpenConnect Logs</title></head>
-    <body style="background:#191f2a;color:#fafafa;">
-    <h2>OpenConnect VPN Logs</h2>
-    <a href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
-    <pre style="white-space:pre-wrap;background:#232e47;color:#90ee90;padding:15px;border-radius:12px;">{{ logs }}</pre>
-    </body></html>
-    ''', logs=logs)
 
 @app.route('/sessions')
 def sessions():
     if not session.get('admin'):
         return redirect(url_for('login'))
-    try:
-        sessions = subprocess.check_output(['occtl', 'show', 'users'], text=True)
-    except Exception as e:
-        sessions = f"Error running occtl: {e}"
+    sessions = get_active_sessions()
     return render_template_string('''
-    <html><head><title>OpenConnect Active Sessions</title></head>
-    <body style="background:#191f2a;color:#fafafa;">
+    <html><head>
+      <title>Active VPN Sessions</title>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap" rel="stylesheet">
+      <style>
+        body {background:#f5f9ff; font-family: 'Inter', sans-serif; margin:20px;}
+        table {width:100%; border-collapse: collapse; margin-bottom: 20px;}
+        th, td {border: 1px solid #ccc; padding: 8px; text-align: left;}
+        th {background:#e0eaff;}
+        a {text-decoration:none; color:#3579f8; font-weight:700;}
+        a:hover {text-decoration:underline;}
+      </style>
+    </head><body>
     <h2>Active VPN Sessions</h2>
-    <a href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
-    <pre style="white-space:pre-wrap;background:#232e47;color:#50e3ff;padding:15px;border-radius:12px;">{{ sessions }}</pre>
+    {% if sessions %}
+    <table>
+      <tr><th>Username</th><th>IP</th><th>Bytes In</th><th>Bytes Out</th><th>Start Time</th></tr>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.get('username', '') }}</td>
+        <td>{{ s.get('ip', '') }}</td>
+        <td>{{ s.get('bytes-in', '') }}</td>
+        <td>{{ s.get('bytes-out', '') }}</td>
+        <td>{{ s.get('start-time', '') }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No active sessions found.</p>
+    {% endif %}
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
     </body></html>
     ''', sessions=sessions)
 
-# [Your existing add_user, del_user, edit_admin, logout routes remain unchanged]
+@app.route('/logs')
+def logs():
+    if not session.get('admin'):
+        return redirect(url_for('login'))
+    logs = get_vpn_logs()
+    return render_template_string('''
+    <html><head>
+      <title>VPN Logs</title>
+      <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
+      <style>
+        body {background:#111; color:#eee; font-family: monospace; white-space: pre-wrap; margin:20px;}
+        a {color:#3579f8; font-weight:700; text-decoration:none;}
+        a:hover {text-decoration:underline;}
+        .log-container {background:#222; padding:15px; border-radius:10px; max-height:70vh; overflow-y:auto; font-size:0.85em;}
+      </style>
+    </head><body>
+      <h2>VPN Log (last 50 lines)</h2>
+      <div class="log-container">{{ logs | join('') }}</div>
+      <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    </body></html>
+    ''', logs=logs)
+
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    if not session.get('admin'):
+        return redirect(url_for('login'))
+    uname = request.form['username'].strip()
+    pword = request.form['password'].strip()
+    if not uname or not pword:
+        flash('Username and password required.', 'error')
+        return redirect(url_for('dashboard'))
+    subprocess.call(f"echo '{pword}\n{pword}' | ocpasswd -g default {uname}", shell=True)
+    exists = False
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE) as f:
+            for row in csv.reader(f):
+                if row and row[0] == uname:
+                    exists = True
+    if not exists:
+        with open(CSV_FILE, 'a') as f:
+            f.write(f"{uname},{pword}\n")
+        flash('User added!', 'success')
+        subprocess.call("systemctl restart ocserv", shell=True)
+    else:
+        flash('User already exists.', 'error')
+    return redirect(url_for('dashboard'))
+
+@app.route('/del_user', methods=['POST'])
+def del_user():
+    if not session.get('admin'):
+        return redirect(url_for('login'))
+    uname = request.form['username']
+    subprocess.call(f"ocpasswd -d {uname}", shell=True)
+    rows = []
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE) as f:
+            for row in csv.reader(f):
+                if row and row[0] != uname and row[0] != "username":
+                    rows.append(row)
+        with open(CSV_FILE, 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(["username", "password"])
+            writer.writerows(rows)
+    flash(f'User {uname} deleted.', 'success')
+    subprocess.call("systemctl restart ocserv", shell=True)
+    return redirect(url_for('dashboard'))
+
+@app.route('/edit_admin', methods=['POST'])
+def edit_admin():
+    if not session.get('admin'):
+        return redirect(url_for('login'))
+    new_user = request.form['username'].strip()
+    new_pass = request.form['password'].strip()
+    if new_user and new_pass:
+        save_admin({'username': new_user, 'password': new_pass})
+        flash('Admin info updated!', 'success')
+    else:
+        flash('Both fields required.', 'error')
+    return redirect(url_for('dashboard'))
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.pop('admin', None)
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PANEL_PORT)
@@ -305,11 +520,6 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-
-# Sudoers for occtl for panel
-if ! grep -q "occtl show users" /etc/sudoers; then
-  echo "root ALL=(ALL) NOPASSWD: /usr/bin/occtl show users" >> /etc/sudoers
-fi
 
 systemctl daemon-reload
 systemctl enable --now ocserv

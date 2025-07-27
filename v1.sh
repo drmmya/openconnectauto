@@ -192,139 +192,148 @@ def dashboard():
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <style>
       body {font-family:'Inter',sans-serif;}
-      .sidebar {
-        min-height: 100vh;
-        background: linear-gradient(135deg,#232e47,#447cfb);
-        color: #fff;
-      }
-      .sidebar .nav-link.active, .sidebar .nav-link:hover {
-        background: #fff2;
-        color: #fff !important;
-      }
       .avatar {width: 38px; height: 38px; border-radius: 50%; background:#fff4; display:inline-block;}
       .bg-card {background:#fff; border-radius:18px; box-shadow:0 2px 16px #0001;}
       .table th, .table td {vertical-align:middle;}
-      @media (max-width: 768px) {
-        .sidebar {min-height:auto; padding:8px;}
-        .bg-card {margin-top: 10px;}
+      .sidebar-gradient {background: linear-gradient(135deg,#232e47,#447cfb); color:#fff;}
+      @media (min-width: 992px) {
+        #sidebarMenu {position:fixed; top:0; left:0; height:100vh; width:230px; z-index:1045;}
+        .main-content {margin-left:230px;}
+      }
+      @media (max-width: 991.98px) {
+        #sidebarMenu {width: 70vw; min-width: 180px;}
+        .main-content {margin-left:0;}
       }
     </style>
 </head>
 <body>
-<div class="container-fluid">
-  <div class="row flex-nowrap">
-    <div class="col-auto col-md-3 col-xl-2 px-3 sidebar d-flex flex-column justify-content-between">
-      <div>
-        <h2 class="mt-4 mb-4 text-center"><span class="material-icons align-middle">admin_panel_settings</span> Admin</h2>
-        <ul class="nav nav-pills flex-column mb-auto">
-          <li class="nav-item">
-            <a href="#" class="nav-link text-white active" aria-current="page">
-              <span class="material-icons align-middle">dashboard</span> Dashboard
-            </a>
-          </li>
-        </ul>
-      </div>
-      <div class="mb-3 text-center">
-        <span class="avatar"><span class="material-icons" style="line-height:38px;">account_circle</span></span>
-        <div class="mt-2 small">{{ admin.username }}</div>
-      </div>
+<!-- Sidebar Offcanvas -->
+<div class="offcanvas-lg offcanvas-start sidebar-gradient" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
+  <div class="offcanvas-header d-lg-none">
+    <h5 class="offcanvas-title" id="sidebarMenuLabel">OpenConnect Admin</h5>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu"></button>
+  </div>
+  <div class="offcanvas-body px-3 d-flex flex-column justify-content-between">
+    <div>
+      <h2 class="mt-4 mb-4 text-center d-none d-lg-block"><span class="material-icons align-middle">admin_panel_settings</span> Admin</h2>
+      <ul class="nav nav-pills flex-column mb-auto">
+        <li class="nav-item">
+          <a href="#" class="nav-link text-white active" aria-current="page">
+            <span class="material-icons align-middle">dashboard</span> Dashboard
+          </a>
+        </li>
+      </ul>
     </div>
-    <div class="col py-3 px-4">
-      <div class="d-flex justify-content-between align-items-center">
-        <h3 class="fw-bold">Dashboard</h3>
-        <form method="post" action="{{ url_for('logout') }}">
-          <button class="btn btn-outline-secondary">Logout</button>
-        </form>
+    <div class="mb-3 text-center">
+      <span class="avatar"><span class="material-icons" style="line-height:38px;">account_circle</span></span>
+      <div class="mt-2 small">{{ admin.username }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Main content with navbar -->
+<div class="main-content">
+  <!-- Navbar: hamburger for mobile, brand, logout -->
+  <nav class="navbar navbar-light bg-white px-3 border-bottom">
+    <div class="d-flex align-items-center">
+      <button class="btn d-lg-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu">
+        <span class="material-icons">menu</span>
+      </button>
+      <span class="navbar-brand mb-0 h4">Dashboard</span>
+    </div>
+    <form class="d-inline" method="post" action="{{ url_for('logout') }}">
+      <button class="btn btn-outline-secondary btn-sm">Logout</button>
+    </form>
+  </nav>
+
+  <div class="container-fluid py-4 px-3 px-lg-5">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat,msg in messages %}
+      <div class="alert alert-{{'danger' if cat=='error' else 'success'}} alert-dismissible fade show mt-3" role="alert">
+        {{msg}}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
       </div>
+      {% endfor %}
+    {% endwith %}
 
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for cat,msg in messages %}
-        <div class="alert alert-{{'danger' if cat=='error' else 'success'}} alert-dismissible fade show mt-3" role="alert">
-          {{msg}}
-          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <!-- Server Info -->
+    <div class="row g-3 mt-2">
+      <div class="col-md-4">
+        <div class="bg-card p-4">
+          <h5><span class="material-icons">computer</span> Server</h5>
+          <div><b>IP:</b> <code>{{server_ip}}</code></div>
+          <div><b>VPN Port:</b> <code>{{vpn_port}}</code></div>
+          <div class="mt-2 small"><b>Max users:</b> {{MAX_USERS}}</div>
         </div>
-        {% endfor %}
-      {% endwith %}
-
-      <!-- Server Info -->
-      <div class="row g-3 mt-2">
-        <div class="col-md-4">
-          <div class="bg-card p-4">
-            <h5><span class="material-icons">computer</span> Server</h5>
-            <div><b>IP:</b> <code>{{server_ip}}</code></div>
-            <div><b>VPN Port:</b> <code>{{vpn_port}}</code></div>
-            <div class="mt-2 small"><b>Max users:</b> {{MAX_USERS}}</div>
-          </div>
-        </div>
-        <div class="col-md-8">
-          <!-- Add User -->
-          <div class="bg-card p-4 mb-3">
-            <h6 class="mb-3"><span class="material-icons align-middle">person_add</span> Add User</h6>
-            <form class="row g-2" method="post" action="{{ url_for('add_user') }}">
-              <div class="col-auto flex-grow-1">
-                <input class="form-control" name="username" placeholder="Username" required minlength=2 />
-              </div>
-              <div class="col-auto flex-grow-1">
-                <input class="form-control" name="password" placeholder="Password" required minlength=3 />
-              </div>
-              <div class="col-auto">
-                <button class="btn btn-primary px-4">Add</button>
-              </div>
-            </form>
-          </div>
-          <!-- User Table -->
-          <div class="bg-card p-4">
-            <h6><span class="material-icons align-middle">group</span> Users</h6>
-            <div class="table-responsive">
-              <table class="table table-striped align-middle mt-2">
-                <thead><tr><th>Username</th><th>Password</th><th>Action</th></tr></thead>
-                <tbody>
-                  {% for user in users %}
-                  <tr>
-                    <td>{{ user.username }}</td>
-                    <td>{{ user.password }}</td>
-                    <td>
-                      <form method="post" action="{{ url_for('del_user') }}">
-                        <input type="hidden" name="username" value="{{user.username}}">
-                        <button class="btn btn-danger btn-sm"><span class="material-icons" style="font-size:1em;">delete</span></button>
-                      </form>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+      </div>
+      <div class="col-md-8">
+        <!-- Add User -->
+        <div class="bg-card p-4 mb-3">
+          <h6 class="mb-3"><span class="material-icons align-middle">person_add</span> Add User</h6>
+          <form class="row g-2" method="post" action="{{ url_for('add_user') }}">
+            <div class="col-auto flex-grow-1">
+              <input class="form-control" name="username" placeholder="Username" required minlength=2 />
             </div>
+            <div class="col-auto flex-grow-1">
+              <input class="form-control" name="password" placeholder="Password" required minlength=3 />
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary px-4">Add</button>
+            </div>
+          </form>
+        </div>
+        <!-- User Table -->
+        <div class="bg-card p-4">
+          <h6><span class="material-icons align-middle">group</span> Users</h6>
+          <div class="table-responsive">
+            <table class="table table-striped align-middle mt-2">
+              <thead><tr><th>Username</th><th>Password</th><th>Action</th></tr></thead>
+              <tbody>
+                {% for user in users %}
+                <tr>
+                  <td>{{ user.username }}</td>
+                  <td>{{ user.password }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('del_user') }}">
+                      <input type="hidden" name="username" value="{{user.username}}">
+                      <button class="btn btn-danger btn-sm"><span class="material-icons" style="font-size:1em;">delete</span></button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-
-      <!-- Admin Info Card -->
-      <div class="row g-3 mt-3">
-        <div class="col-md-6">
-          <div class="bg-card p-4">
-            <h6><span class="material-icons align-middle">manage_accounts</span> Admin Info</h6>
-            <form method="post" action="{{ url_for('edit_admin') }}">
-              <div class="mb-2"><label class="form-label">Username</label>
-                <input class="form-control" name="username" required minlength=2 value="{{admin.username}}">
-              </div>
-              <div class="mb-2"><label class="form-label">Password</label>
-                <input class="form-control" name="password" required minlength=3 value="{{admin.password}}">
-              </div>
-              <button class="btn btn-outline-primary">Update Admin</button>
-            </form>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="bg-card p-4">
-            <h6><span class="material-icons align-middle">settings</span> Panel Info</h6>
-            <div><b>Recover admin:</b> <code>sudo get_admin_info</code></div>
-            <div class="mt-2"><b>Docs:</b> <a href="#" class="link-primary">Readme</a></div>
-          </div>
-        </div>
-      </div>
-
-      <footer class="mt-5 text-muted small text-center">OpenConnect Admin Panel &copy; 2025</footer>
     </div>
+
+    <!-- Admin Info Card -->
+    <div class="row g-3 mt-3">
+      <div class="col-md-6">
+        <div class="bg-card p-4">
+          <h6><span class="material-icons align-middle">manage_accounts</span> Admin Info</h6>
+          <form method="post" action="{{ url_for('edit_admin') }}">
+            <div class="mb-2"><label class="form-label">Username</label>
+              <input class="form-control" name="username" required minlength=2 value="{{admin.username}}">
+            </div>
+            <div class="mb-2"><label class="form-label">Password</label>
+              <input class="form-control" name="password" required minlength=3 value="{{admin.password}}">
+            </div>
+            <button class="btn btn-outline-primary">Update Admin</button>
+          </form>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="bg-card p-4">
+          <h6><span class="material-icons align-middle">settings</span> Panel Info</h6>
+          <div><b>Recover admin:</b> <code>sudo get_admin_info</code></div>
+          <div class="mt-2"><b>Docs:</b> <a href="#" class="link-primary">Readme</a></div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="mt-5 text-muted small text-center">OpenConnect Admin Panel &copy; 2025</footer>
   </div>
 </div>
 </body>
